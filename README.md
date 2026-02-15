@@ -24,6 +24,7 @@ zipilot resume [--config config.yaml]
 zipilot status [--config config.yaml]
 zipilot validate <spec.yaml>
 zipilot tools
+zipilot create-spec [output.yaml] [--with-codex]
 ```
 
 ## Repo Structure
