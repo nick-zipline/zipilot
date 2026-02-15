@@ -5,26 +5,33 @@
 ## Quickstart
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
+uv sync
 ```
 
 Run a spec:
 
 ```bash
+uv run zipilot run specs/example.yaml --approve
+```
+
+If `uv` is not installed, fallback:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
 zipilot run specs/example.yaml --approve
 ```
 
 ## CLI
 
 ```bash
-zipilot run <spec.yaml> [--approve] [--config config.yaml]
-zipilot resume [--config config.yaml]
-zipilot status [--config config.yaml]
-zipilot validate <spec.yaml>
-zipilot tools
-zipilot create-spec [output.yaml] [--with-codex]
+uv run zipilot run <spec.yaml> [--approve] [--config config.yaml]
+uv run zipilot resume [--config config.yaml]
+uv run zipilot status [--config config.yaml]
+uv run zipilot validate <spec.yaml>
+uv run zipilot tools
+uv run zipilot create-spec [output.yaml] [--with-codex]
 ```
 
 ## Repo Structure
@@ -76,5 +83,5 @@ Key fields:
 ## Tests
 
 ```bash
-python3 -m pytest tests/ -v
+uv run pytest tests/ -v
 ```
