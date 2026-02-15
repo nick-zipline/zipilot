@@ -1,0 +1,7 @@
+working_directory: ~/github/cloud
+model: gpt-5.3-codex
+context_window_tokens: 192000
+context_warn_pct: 80
+context_handoff_pct: 90
+max_retries: 3
+state_file: ~/.zipilot/state.json

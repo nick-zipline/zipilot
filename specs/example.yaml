@@ -1,0 +1,25 @@
+version: 1
+goal: "Fix flaky integration tests in ordering service"
+steps:
+  - id: analyze
+    description: "Identify flaky test patterns"
+    codex_prompt: "Look at services/ordering/tests/ and find timing-dependent assertions that could cause flaky failures. List each flaky pattern with file path and line number."
+  - id: fix
+    description: "Apply fixes to identified tests"
+    codex_prompt: "Fix the flaky test patterns identified in the previous step. Replace timing-dependent assertions with proper waits, retries, or mocks."
+  - id: verify
+    description: "Run test suite to confirm fixes"
+    codex_prompt: "Run the ordering service test suite and verify all tests pass consistently."
+exit_conditions:
+  - type: command
+    command: "bin/bazel test //services/ordering/..."
+    expect_exit_code: 0
+  - type: playwright
+    url: "http://localhost:3000/orders"
+    assertions:
+      - "Order list table is visible"
+      - "No error banners displayed"
+max_retries: 3
+context:
+  working_directory: ~/github/cloud
+  model: gpt-5.3-codex

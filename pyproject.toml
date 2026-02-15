@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "zipilot"
+version = "0.1.0"
+description = "Autonomous control plane for OpenAI Codex CLI sessions"
+requires-python = ">=3.9"
+dependencies = ["pyyaml>=6.0"]
+
+[project.scripts]
+zipilot = "zipilot.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
