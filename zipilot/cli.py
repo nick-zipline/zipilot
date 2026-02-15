@@ -8,7 +8,7 @@ import sys
 
 from zipilot.config import load_config
 from zipilot.fsm import FSMEngine
-from zipilot.persistence import load_state
+from zipilot.persistence import list_sessions, load_state
 from zipilot.spec import load_spec
 from zipilot.states import State
 from zipilot.tools.registry import create_default_registry
@@ -24,6 +24,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         config=config,
         registry=registry,
         auto_approve=args.approve,
+        spec_path=args.spec,
     )
     final = engine.run()
 
@@ -40,7 +41,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 def cmd_resume(args: argparse.Namespace) -> int:
     config = load_config(args.config)
-    ps = load_state(config.state_path)
+    ps = load_state(config.sessions_path)
 
     if ps is None:
         print("No persisted state found. Nothing to resume.")
@@ -52,7 +53,13 @@ def cmd_resume(args: argparse.Namespace) -> int:
         return 1
 
     registry = create_default_registry()
-    engine = FSMEngine(spec=spec, config=config, registry=registry)
+    engine = FSMEngine(
+        spec=spec,
+        config=config,
+        registry=registry,
+        spec_path=ps.spec_path,
+        session_id=ps.session_id,
+    )
     final = engine.resume(ps)
 
     if final == State.COMPLETED:
@@ -65,17 +72,25 @@ def cmd_resume(args: argparse.Namespace) -> int:
 
 def cmd_status(args: argparse.Namespace) -> int:
     config = load_config(args.config)
-    ps = load_state(config.state_path)
+    active = load_state(config.sessions_path)
+    sessions = list_sessions(config.sessions_path)
 
-    if ps is None:
-        print("No active session.")
+    if not sessions:
+        print("No sessions found.")
         return 0
 
-    print(f"State:      {ps.state}")
-    print(f"Spec:       {ps.spec_path}")
-    print(f"Step:       {ps.step_index + 1}")
-    print(f"Retries:    {ps.retry_count}")
-    print(f"Sessions:   {len(ps.session_history)}")
+    if active is None:
+        print("No active session.")
+    else:
+        print(f"Active session: {active.session_id} ({active.state})")
+
+    print(f"Stored sessions: {len(sessions)}")
+    for session_id, ps in sessions:
+        status = "active" if active and session_id == active.session_id else "completed" if ps.completed else "in-progress"
+        print(
+            f"- {session_id} [{status}] "
+            f"state={ps.state} step={ps.step_index + 1} retries={ps.retry_count}"
+        )
     return 0
 
 

@@ -88,13 +88,13 @@ exit_conditions:
     command: "true"
 """)
 
-    def _make_engine(self, spec=None, auto_approve=True):
+    def _make_engine(self, spec=None, auto_approve=True, sessions_dir="/tmp"):
         from zipilot.config import Config
         from zipilot.fsm import FSMEngine
         from zipilot.tools.registry import ToolRegistry
 
         spec = spec or self._make_spec()
-        config = Config(state_file="/tmp/zipilot_test_state.json")
+        config = Config(sessions_dir=sessions_dir)
         registry = ToolRegistry()
         return FSMEngine(
             spec=spec,
@@ -103,19 +103,19 @@ exit_conditions:
             auto_approve=auto_approve,
         )
 
-    def test_engine_initial_state(self):
-        engine = self._make_engine()
+    def test_engine_initial_state(self, tmp_path):
+        engine = self._make_engine(sessions_dir=str(tmp_path))
         assert engine.ctx.state == State.IDLE
 
-    def test_engine_transitions_to_spec_creation(self):
+    def test_engine_transitions_to_spec_creation(self, tmp_path):
         from zipilot.states import Event
-        engine = self._make_engine()
+        engine = self._make_engine(sessions_dir=str(tmp_path))
         engine._emit(Event.SPEC_LOADED)
         assert engine.ctx.state == State.SPEC_CREATION
 
-    def test_engine_approve_transitions_to_executing(self):
+    def test_engine_approve_transitions_to_executing(self, tmp_path):
         from zipilot.states import Event
-        engine = self._make_engine()
+        engine = self._make_engine(sessions_dir=str(tmp_path))
         engine._emit(Event.SPEC_LOADED)
         engine._emit(Event.APPROVED)
         assert engine.ctx.state == State.EXECUTING

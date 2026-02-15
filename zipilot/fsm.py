@@ -9,7 +9,13 @@ from typing import Any
 
 from zipilot.config import Config
 from zipilot.context import ContextTracker
-from zipilot.persistence import PersistedState, clear_state, save_state
+from zipilot.persistence import (
+    PersistedState,
+    cleanup_sessions,
+    complete_session,
+    create_session,
+    save_state,
+)
 from zipilot.session import CodexRunner, SessionRecord
 from zipilot.spec import ExitCondition, Spec
 from zipilot.states import Event, State, transition
@@ -25,6 +31,8 @@ class FSMContext:
     spec: Spec
     config: Config
     registry: ToolRegistry
+    session_id: str
+    spec_path: str = ""
     state: State = State.IDLE
     step_index: int = 0
     retry_count: int = 0
@@ -45,11 +53,16 @@ class FSMEngine:
         registry: ToolRegistry,
         auto_approve: bool = False,
         user_input_callback: Any = None,
+        spec_path: str | None = None,
+        session_id: str | None = None,
     ) -> None:
+        current_session_id = session_id or create_session(spec.goal, config.sessions_path)
         self.ctx = FSMContext(
             spec=spec,
             config=config,
             registry=registry,
+            session_id=current_session_id,
+            spec_path=str(Path(spec_path).resolve()) if spec_path else "",
             user_input_callback=user_input_callback,
         )
         self.auto_approve = auto_approve
@@ -90,7 +103,8 @@ class FSMEngine:
 
         log.info("FSM finished in state %s", self.ctx.state.name)
         if self.ctx.state == State.COMPLETED:
-            clear_state(self.ctx.config.state_path)
+            complete_session(self.ctx.config.sessions_path)
+            cleanup_sessions(self.ctx.config.sessions_path, self.ctx.config.max_sessions)
         return self.ctx.state
 
     def resume(self, ps: PersistedState) -> State:
@@ -99,6 +113,8 @@ class FSMEngine:
         self.ctx.step_index = ps.step_index
         self.ctx.retry_count = ps.retry_count
         self.ctx.continuation_context = ps.continuation_context
+        self.ctx.session_id = ps.session_id
+        self.ctx.spec_path = ps.spec_path
         log.info("Resuming FSM from state %s, step %d", self.ctx.state.name, self.ctx.step_index)
 
         # If we were in a transient state, move back to EXECUTING
@@ -117,7 +133,8 @@ class FSMEngine:
             self._persist()
 
         if self.ctx.state == State.COMPLETED:
-            clear_state(self.ctx.config.state_path)
+            complete_session(self.ctx.config.sessions_path)
+            cleanup_sessions(self.ctx.config.sessions_path, self.ctx.config.max_sessions)
         return self.ctx.state
 
     # -- State handlers --
@@ -322,8 +339,9 @@ class FSMEngine:
     def _persist(self) -> None:
         """Save current state to disk."""
         ps = PersistedState(
+            session_id=self.ctx.session_id,
             state=self.ctx.state.name,
-            spec_path="",  # Filled by CLI layer
+            spec_path=self.ctx.spec_path,
             step_index=self.ctx.step_index,
             retry_count=self.ctx.retry_count,
             session_history=[
@@ -338,7 +356,7 @@ class FSMEngine:
             continuation_context=self.ctx.continuation_context[:2000],
         )
         try:
-            save_state(ps, self.ctx.config.state_path)
+            save_state(ps, self.ctx.config.sessions_path)
         except Exception as e:
             log.warning("Failed to persist state: %s", e)
 

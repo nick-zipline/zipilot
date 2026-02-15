@@ -18,11 +18,15 @@ class Config:
     context_warn_pct: int = 80
     context_handoff_pct: int = 90
     max_retries: int = 3
-    state_file: str = "~/.zipilot/state.json"
+    sessions_dir: str = "sessions"
+    max_sessions: int = 10
 
     @property
-    def state_path(self) -> Path:
-        return Path(self.state_file).expanduser()
+    def sessions_path(self) -> Path:
+        path = Path(self.sessions_dir).expanduser()
+        if path.is_absolute():
+            return path
+        return _DEFAULT_CONFIG.parent / path
 
     @property
     def work_dir(self) -> Path:

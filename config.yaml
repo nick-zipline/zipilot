@@ -4,4 +4,5 @@ context_window_tokens: 192000
 context_warn_pct: 80
 context_handoff_pct: 90
 max_retries: 3
-state_file: ~/.zipilot/state.json
+sessions_dir: sessions
+max_sessions: 10
