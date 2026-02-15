@@ -1,0 +1,2 @@
+[console_scripts]
+zipilot = zipilot.cli:main

@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=68.0"]
-build-backend = "setuptools.backends._legacy:_Backend"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "zipilot"
@@ -11,6 +11,10 @@ dependencies = ["pyyaml>=6.0"]
 
 [project.scripts]
 zipilot = "zipilot.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["zipilot*"]
+exclude = ["tests*", "specs*", "sessions*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
