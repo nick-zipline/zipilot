@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="620" viewBox="0 0 1280 620" role="img" aria-labelledby="title desc">
+  <title id="title">zipilot FSM state machine</title>
+  <desc id="desc">State machine diagram for zipilot showing states and event-labeled transitions.</desc>
+  <defs>
+    <style>
+      .bg { fill: #f8fafc; }
+      .node { fill: #eef6ff; stroke: #2b6cb0; stroke-width: 2.2; rx: 10; filter: url(#shadow); }
+      .decision { fill: #fff6e5; stroke: #b7791f; stroke-width: 2.2; rx: 10; filter: url(#shadow); }
+      .terminal { fill: #e6ffed; stroke: #2f855a; stroke-width: 2.2; rx: 10; filter: url(#shadow); }
+      .io { fill: #f7fafc; stroke: #4a5568; stroke-width: 2.2; filter: url(#shadow); }
+      .label { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 14px; fill: #1a202c; font-weight: 700; }
+      .edge { stroke: #334155; stroke-width: 2.2; fill: none; }
+      .edge-label { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 12px; font-weight: 700; fill: #111827; paint-order: stroke; stroke: #ffffff; stroke-width: 4px; stroke-linejoin: round; }
+      .title { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 18px; font-weight: 700; fill: #1a202c; }
+    </style>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="1" stdDeviation="1.2" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+    <marker id="arrow" markerWidth="12" markerHeight="8" refX="10" refY="4" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L12,4 L0,8 z" fill="#334155" />
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1280" height="620" />
+  <text class="title" x="30" y="36">zipilot Finite State Machine</text>
+
+  <circle class="io" cx="70" cy="110" r="22" />
+  <text class="label" x="50" y="115">Start</text>
+
+  <rect class="node" x="140" y="80" width="130" height="56" />
+  <text class="label" x="182" y="113">IDLE</text>
+
+  <rect class="node" x="330" y="80" width="190" height="56" />
+  <text class="label" x="364" y="113">SPEC_CREATION</text>
+
+  <rect class="node" x="590" y="80" width="150" height="56" />
+  <text class="label" x="624" y="113">EXECUTING</text>
+
+  <rect class="node" x="820" y="80" width="150" height="56" />
+  <text class="label" x="856" y="113">VERIFYING</text>
+
+  <rect class="terminal" x="1040" y="80" width="160" height="56" />
+  <text class="label" x="1072" y="113">COMPLETED</text>
+
+  <circle class="io" cx="1240" cy="108" r="22" />
+  <text class="label" x="1228" y="113">End</text>
+
+  <rect class="decision" x="590" y="250" width="150" height="56" />
+  <text class="label" x="636" y="283">BLOCKED</text>
+
+  <rect class="node" x="360" y="430" width="160" height="56" />
+  <text class="label" x="392" y="463">RECOVERING</text>
+
+  <rect class="node" x="600" y="430" width="170" height="56" />
+  <text class="label" x="628" y="463">NEEDS_INPUT</text>
+
+  <rect class="node" x="860" y="430" width="220" height="56" />
+  <text class="label" x="894" y="463">CONTEXT_HANDOFF</text>
+
+  <path class="edge" marker-end="url(#arrow)" d="M92 110 L138 108" />
+  <path class="edge" marker-end="url(#arrow)" d="M270 108 L328 108" />
+  <text class="edge-label" x="286" y="98">SPEC_LOADED</text>
+
+  <path class="edge" marker-end="url(#arrow)" d="M520 108 L588 108" />
+  <text class="edge-label" x="540" y="98">APPROVED</text>
+
+  <path class="edge" marker-end="url(#arrow)" d="M740 108 L818 108" />
+  <text class="edge-label" x="766" y="98">STEP_DONE</text>
+
+  <path class="edge" marker-end="url(#arrow)" d="M970 108 L1038 108" />
+  <text class="edge-label" x="988" y="98">ALL_PASSED</text>
+
+  <path class="edge" marker-end="url(#arrow)" d="M1200 108 L1216 108" />
+
+  <path class="edge" marker-end="url(#arrow)" d="M640 136 L640 248" />
+  <text class="edge-label" x="650" y="194">ERROR</text>
+
+  <path class="edge" marker-end="url(#arrow)" d="M895 136 L970 200 L970 428" />
+  <text class="edge-label" x="978" y="242">CONTEXT_HIGH</text>
+
+  <path class="edge" marker-end="url(#arrow)" d="M820 108 C780 130, 760 220, 742 270" />
+  <text class="edge-label" x="770" y="184">SOME_FAILED</text>
+
+  <path class="edge" marker-end="url(#arrow)" d="M600 294 C560 340, 540 390, 520 458" />
+  <text class="edge-label" x="536" y="398">TOOL</text>
+
+  <path class="edge" marker-end="url(#arrow)" d="M665 306 L685 428" />
+  <text class="edge-label" x="695" y="372">MAX_RETRIES</text>
+
+  <path class="edge" marker-end="url(#arrow)" d="M520 438 C560 380, 580 340, 620 306" />
+  <text class="edge-label" x="548" y="360">ERROR</text>
+
+  <path class="edge" marker-end="url(#arrow)" d="M520 458 L590 120" />
+  <text class="edge-label" x="540" y="292">RECOVERED</text>
+
+  <path class="edge" marker-end="url(#arrow)" d="M685 430 L665 136" />
+  <text class="edge-label" x="706" y="286">INPUT_RECEIVED</text>
+
+  <path class="edge" marker-end="url(#arrow)" d="M860 458 L740 120" />
+  <text class="edge-label" x="870" y="296">HANDOFF_COMPLETE</text>
+</svg>

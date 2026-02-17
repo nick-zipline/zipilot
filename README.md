@@ -34,25 +34,6 @@ uv run zipilot tools
 uv run zipilot spec [output.yaml] [--with-codex]
 ```
 
-## Repo Structure
-
-```text
-zipilot/
-├── config.yaml              # default runtime config
-├── specs/                   # example/input workflow specs
-├── tests/                   # unit/integration tests
-├── zipilot/
-│   ├── cli.py               # CLI entrypoint and commands
-│   ├── config.py            # config model + loader
-│   ├── fsm.py               # FSM engine and state handlers
-│   ├── persistence.py       # session-scoped state persistence
-│   ├── session.py           # codex exec wrapper
-│   ├── spec.py              # spec parsing/validation
-│   ├── states.py            # FSM states, events, transitions
-│   └── tools/               # recovery/verification tools
-└── sessions/                # runtime session state (gitignored)
-```
-
 ## FSM States and Transitions
 
 `zipilot` runs as a finite state machine defined in `zipilot/states.py` and driven by handlers in `zipilot/fsm.py`.
@@ -68,6 +49,10 @@ zipilot/
 - `NEEDS_INPUT`: Waiting for user guidance after retries/tool recovery are exhausted.
 - `CONTEXT_HANDOFF`: Context window is high; summarizing and resetting session context.
 - `COMPLETED`: Terminal success/exit state.
+
+### State Diagram
+
+![zipilot FSM diagram](docs/fsm-state-machine.svg)
 
 ### Transition Table
 
@@ -92,6 +77,25 @@ zipilot/
 - `COMPLETED` is terminal in the transition table (no outgoing transitions).
 - `run()` returns when state is `COMPLETED` or `NEEDS_INPUT`.
 - In `NEEDS_INPUT`, entering `abort` sets state directly to `COMPLETED` (without an FSM event).
+
+## Repo Structure
+
+```text
+zipilot/
+├── config.yaml              # default runtime config
+├── specs/                   # example/input workflow specs
+├── tests/                   # unit/integration tests
+├── zipilot/
+│   ├── cli.py               # CLI entrypoint and commands
+│   ├── config.py            # config model + loader
+│   ├── fsm.py               # FSM engine and state handlers
+│   ├── persistence.py       # session-scoped state persistence
+│   ├── session.py           # codex exec wrapper
+│   ├── spec.py              # spec parsing/validation
+│   ├── states.py            # FSM states, events, transitions
+│   └── tools/               # recovery/verification tools
+└── sessions/                # runtime session state (gitignored)
+```
 
 ## Session Persistence
 
