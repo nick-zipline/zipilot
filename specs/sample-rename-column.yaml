@@ -1,0 +1,21 @@
+version: 1
+goal: Rename the Region column header to Region Name in the location manager sites table
+steps:
+  - id: rename-column
+    description: Rename Region column header to Region Name
+    codex_prompt: >
+      In src/app/(dashboard)/sites/page.tsx, find the column with
+      header: "Region" and change it to header: "Region Name".
+      Do not change anything else.
+exit_conditions:
+  - type: playwright
+    url: http://localhost:7770/app/location-manager/
+    assertions:
+      - "The sites table has a column header called 'Region Name'"
+      - "Click the edit button on the first site row to open the edit side sheet"
+      - "The edit side sheet is visible with site details"
+max_retries: 2
+context:
+  working_directory:
+    - ~/github/cloud/services/fleet_apps/location_manager_app
+  model: gpt-5.3-codex

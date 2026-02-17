@@ -373,8 +373,8 @@ class TestCmdSpec:
             (explore_result, ""),
             (plan_text, ""),
         ]
-        # Accept plan, output path, don't run
-        mock_prompt.side_effect = ["y", str(tmp_path / "specs/test.yaml"), "3", "n"]
+        # Confirm dirs, accept plan, output path, don't run
+        mock_prompt.side_effect = [".", "y", str(tmp_path / "specs/test.yaml"), "3", "n"]
 
         args = self._make_args()
         result = cmd_spec(args)
@@ -397,7 +397,7 @@ class TestCmdSpec:
             ("", "codex timed out"),   # explore fails
             (simple_steps, ""),         # simple planning succeeds
         ]
-        mock_prompt.side_effect = ["y", str(tmp_path / "specs/test.yaml"), "3", "n"]
+        mock_prompt.side_effect = [".", "y", str(tmp_path / "specs/test.yaml"), "3", "n"]
 
         args = self._make_args()
         result = cmd_spec(args)
@@ -415,7 +415,7 @@ class TestCmdSpec:
 
         simple_steps = "- Step one\n- Step two"
         mock_codex.return_value = (simple_steps, "")
-        mock_prompt.side_effect = ["y", str(tmp_path / "specs/test.yaml"), "3", "n"]
+        mock_prompt.side_effect = [".", "y", str(tmp_path / "specs/test.yaml"), "3", "n"]
 
         args = self._make_args(no_explore=True)
         result = cmd_spec(args)
@@ -431,8 +431,9 @@ class TestCmdSpec:
         monkeypatch.chdir(tmp_path)
 
         mock_codex.return_value = ("", "codex error")
-        # Manual steps, then accept, output, retries, don't run
+        # Confirm dirs, manual steps, then accept, output, retries, don't run
         mock_prompt.side_effect = [
+            ".",                 # Confirm directories
             "Manual step one",   # Step 1 description
             "",                  # End manual entry
             "y",                 # Accept plan
@@ -455,7 +456,7 @@ class TestCmdSpec:
 
         simple_steps = "- Step one\n- Step two"
         mock_codex.return_value = (simple_steps, "")
-        mock_prompt.side_effect = ["n"]  # Reject plan
+        mock_prompt.side_effect = [".", "n"]  # Confirm dirs, reject plan
 
         args = self._make_args(no_explore=True)
         result = cmd_spec(args)
@@ -479,7 +480,7 @@ class TestCmdSpec:
         simple_steps = "- Step one\n- Step two"
         mock_codex.return_value = (simple_steps, "")
         output_path = str(tmp_path / "specs/test.yaml")
-        mock_prompt.side_effect = ["y", output_path, "3", "n"]
+        mock_prompt.side_effect = ["~/a, ~/b", "y", output_path, "3", "n"]
 
         args = self._make_args(no_explore=True, working_directory="~/a,~/b")
         result = cmd_spec(args)

@@ -23,7 +23,8 @@ def _run_git(args: list[str], cwd: str) -> subprocess.CompletedProcess:
 def is_git_repo(directory: str) -> bool:
     """Return True if *directory* is inside a git repository."""
     try:
-        result = _run_git(["rev-parse", "--git-dir"], cwd=directory)
+        expanded = str(Path(directory).expanduser())
+        result = _run_git(["rev-parse", "--git-dir"], cwd=expanded)
         return result.returncode == 0
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
         return False

@@ -52,6 +52,14 @@ class TestIsGitRepo:
         with patch("zipilot.worktree._run_git", side_effect=FileNotFoundError):
             assert is_git_repo("/no/git") is False
 
+    def test_tilde_is_expanded(self):
+        mock_result = MagicMock(returncode=0)
+        with patch("zipilot.worktree._run_git", return_value=mock_result) as mock_git:
+            is_git_repo("~/somepath")
+            # The cwd kwarg should be the expanded home path, not ~/somepath
+            cwd_used = mock_git.call_args[1]["cwd"]
+            assert "~" not in cwd_used
+
 
 # ---------------------------------------------------------------------------
 # setup_worktree

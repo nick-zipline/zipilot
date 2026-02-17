@@ -543,6 +543,14 @@ def cmd_spec(args: argparse.Namespace) -> int:
     model = args.model or config.model
     step_count = args.steps
 
+    # 3a. Prompt user to confirm/edit code directories
+    default_dirs = ", ".join(working_directories)
+    dirs_input = _prompt("Code directories (comma-separated)", default_dirs)
+    working_directories = [d.strip() for d in dirs_input.split(",") if d.strip()]
+    if not working_directories:
+        print("At least one directory is required.", file=sys.stderr)
+        return 1
+
     # 3b. Set up git worktree (unless --no-worktree)
     if not args.no_worktree:
         from zipilot.worktree import is_git_repo, setup_worktree
@@ -631,7 +639,7 @@ def cmd_spec(args: argparse.Namespace) -> int:
             console.print(f"     [muted]Codex: {prompt_preview}[/muted]")
     print()
 
-    choice = _prompt("Accept plan? [Y/n/r=regenerate]", "y").lower()
+    choice = _prompt("Accept plan? [Y/n/r=regenerate]", "y").strip().lower()
     if choice in ("r", "regenerate"):
         # Re-run planning without exploration (already have context)
         if exploration_text:
@@ -649,7 +657,7 @@ def cmd_spec(args: argparse.Namespace) -> int:
                     {"description": s, "codex_prompt": None, "files": []}
                     for s in simple_steps
                 ]
-    elif choice not in ("y", "yes", ""):
+    elif choice != "" and not choice.startswith("y"):
         print("Aborted.")
         return 1
 
@@ -763,7 +771,8 @@ def cmd_create_spec(args: argparse.Namespace) -> int:
         for i, step in enumerate(drafted, start=1):
             print(f"  {i}. {step}")
         print()
-        accept = _prompt("Accept plan? [Y/n]", "y").lower() in ("y", "yes", "")
+        choice = _prompt("Accept plan? [Y/n]", "y").strip().lower()
+        accept = choice == "" or choice.startswith("y")
         if accept:
             steps = [
                 {"id": f"step{i}", "description": s}
