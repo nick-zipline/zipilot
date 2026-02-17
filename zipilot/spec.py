@@ -9,6 +9,28 @@ import yaml
 
 
 @dataclass
+class PreflightDocker:
+    enabled: bool = True
+    socket_paths: list[str] = field(default_factory=list)
+    health_check: str | None = None
+    recovery_command: str | None = None
+
+
+@dataclass
+class PreflightCommand:
+    command: str
+    working_directory: str | None = None
+    timeout: int = 30
+    fail_on_error: bool = False
+
+
+@dataclass
+class Preflight:
+    docker: PreflightDocker = field(default_factory=PreflightDocker)
+    commands: list[PreflightCommand] = field(default_factory=list)
+
+
+@dataclass
 class ExitCondition:
     type: str  # "command" or "playwright"
     command: str | None = None
@@ -43,6 +65,7 @@ class Spec:
     exit_conditions: list[ExitCondition]
     max_retries: int = 3
     context: SpecContext = field(default_factory=SpecContext)
+    preflight: Preflight = field(default_factory=Preflight)
 
     @property
     def step_ids(self) -> list[str]:
@@ -65,6 +88,30 @@ def _parse_step(raw: dict) -> Step:
         description=raw["description"],
         codex_prompt=raw.get("codex_prompt"),
     )
+
+
+def _parse_preflight(raw: dict | None) -> Preflight:
+    if raw is None:
+        return Preflight()
+    docker_raw = raw.get("docker")
+    if docker_raw is None:
+        docker = PreflightDocker()
+    else:
+        docker = PreflightDocker(
+            enabled=docker_raw.get("enabled", True),
+            socket_paths=docker_raw.get("socket_paths", []),
+            health_check=docker_raw.get("health_check"),
+            recovery_command=docker_raw.get("recovery_command"),
+        )
+    commands: list[PreflightCommand] = []
+    for cmd_raw in raw.get("commands", []):
+        commands.append(PreflightCommand(
+            command=cmd_raw["command"],
+            working_directory=cmd_raw.get("working_directory"),
+            timeout=cmd_raw.get("timeout", 30),
+            fail_on_error=cmd_raw.get("fail_on_error", False),
+        ))
+    return Preflight(docker=docker, commands=commands)
 
 
 def _parse_context(raw: dict | None) -> SpecContext:
@@ -104,6 +151,7 @@ def _build_spec(raw: dict) -> Spec:
         exit_conditions=[_parse_exit_condition(e) for e in raw["exit_conditions"]],
         max_retries=raw.get("max_retries", 3),
         context=_parse_context(raw.get("context")),
+        preflight=_parse_preflight(raw.get("preflight")),
     )
 
 
@@ -118,8 +166,27 @@ def validate_raw(raw: dict) -> None:
         if required not in raw:
             errors.append(f"Missing required field: {required}")
 
+    preflight_raw = raw.get("preflight")
+    if preflight_raw is not None and not isinstance(preflight_raw, dict):
+        errors.append("'preflight' must be a mapping")
+
     if errors:
         raise ValueError("Spec validation failed:\n" + "\n".join(f"  - {e}" for e in errors))
+
+    if preflight_raw is not None and isinstance(preflight_raw, dict):
+        docker_raw = preflight_raw.get("docker")
+        if docker_raw is not None and not isinstance(docker_raw, dict):
+            errors.append("'preflight.docker' must be a mapping")
+        commands_raw = preflight_raw.get("commands")
+        if commands_raw is not None:
+            if not isinstance(commands_raw, list):
+                errors.append("'preflight.commands' must be a list")
+            else:
+                for i, cmd in enumerate(commands_raw):
+                    if not isinstance(cmd, dict):
+                        errors.append(f"preflight.commands[{i}] must be a mapping")
+                    elif "command" not in cmd:
+                        errors.append(f"preflight.commands[{i}] missing 'command'")
 
     if raw.get("version") != 1:
         errors.append(f"Unsupported spec version: {raw.get('version')} (expected 1)")

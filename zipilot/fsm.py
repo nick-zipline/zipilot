@@ -240,18 +240,52 @@ class FSMEngine:
         console = get_console()
 
         # Pre-flight: check docker container health
-        docker_tool = self.ctx.registry.get("docker")
-        if docker_tool is not None:
-            preflight = docker_tool.run({
-                "preflight": True,
-                "working_directory": working_dir,
+        preflight_cfg = self.ctx.spec.preflight
+        if preflight_cfg.docker.enabled:
+            docker_tool = self.ctx.registry.get("docker")
+            if docker_tool is not None:
+                docker_result = docker_tool.run({
+                    "preflight": True,
+                    "working_directory": working_dir,
+                    "socket_paths": preflight_cfg.docker.socket_paths,
+                    "health_check": preflight_cfg.docker.health_check,
+                    "recovery_command": preflight_cfg.docker.recovery_command,
+                })
+                if docker_result.data and docker_result.data.get("restarted"):
+                    log.info("Pre-flight: restarted containers: %s", docker_result.data["restarted"])
+                    console.print(
+                        f"  [warning]Pre-flight:[/warning] Restarted "
+                        f"{len(docker_result.data['restarted'])} container(s)"
+                    )
+                elif not docker_result.success:
+                    log.warning("Pre-flight docker check failed: %s", docker_result.message)
+                    console.print(f"  [warning]Pre-flight:[/warning] {docker_result.message[:200]}")
+
+        # Pre-flight: run custom commands
+        run_command_tool = self.ctx.registry.get("run_command")
+        for cmd_cfg in preflight_cfg.commands:
+            if run_command_tool is None:
+                log.warning("run_command tool not registered, skipping preflight command")
+                break
+            cmd_cwd = cmd_cfg.working_directory or working_dir
+            cmd_cwd = str(Path(cmd_cwd).expanduser())
+            cmd_result = run_command_tool.run({
+                "command": cmd_cfg.command,
+                "working_directory": cmd_cwd,
+                "timeout": cmd_cfg.timeout,
             })
-            if preflight.data and preflight.data.get("restarted"):
-                log.info("Pre-flight: restarted containers: %s", preflight.data["restarted"])
-                console.print(
-                    f"  [warning]Pre-flight:[/warning] Restarted "
-                    f"{len(preflight.data['restarted'])} container(s)"
-                )
+            if not cmd_result.success:
+                if cmd_cfg.fail_on_error:
+                    log.error("Pre-flight command failed: %s", cmd_cfg.command)
+                    console.print(f"  [error]Pre-flight:[/error] {cmd_cfg.command} failed")
+                    self.ctx.last_error = f"Preflight command failed: {cmd_result.message}"
+                    self._emit(Event.SOME_FAILED)
+                    return
+                else:
+                    log.warning("Pre-flight command failed (non-fatal): %s", cmd_cfg.command)
+                    console.print(
+                        f"  [warning]Pre-flight:[/warning] {cmd_cfg.command} failed (skipping)"
+                    )
 
         for i, ec in enumerate(self.ctx.spec.exit_conditions):
             result = self._run_exit_condition(ec, working_dir)

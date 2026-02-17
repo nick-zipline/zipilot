@@ -53,6 +53,46 @@ zipilot/
 └── sessions/                # runtime session state (gitignored)
 ```
 
+## FSM States and Transitions
+
+`zipilot` runs as a finite state machine defined in `zipilot/states.py` and driven by handlers in `zipilot/fsm.py`.
+
+### States
+
+- `IDLE`: Engine initialized; no work started yet.
+- `SPEC_CREATION`: Spec is displayed and awaiting approval.
+- `EXECUTING`: Running workflow steps through Codex.
+- `VERIFYING`: Running all exit conditions after steps are done.
+- `BLOCKED`: A step or verification failed; deciding how to recover.
+- `RECOVERING`: Running a recovery tool selected from the tool registry.
+- `NEEDS_INPUT`: Waiting for user guidance after retries/tool recovery are exhausted.
+- `CONTEXT_HANDOFF`: Context window is high; summarizing and resetting session context.
+- `COMPLETED`: Terminal success/exit state.
+
+### Transition Table
+
+| From | Event | To | Triggered when |
+|---|---|---|---|
+| `IDLE` | `SPEC_LOADED` | `SPEC_CREATION` | `run()` starts and loads the parsed spec. |
+| `SPEC_CREATION` | `APPROVED` | `EXECUTING` | User (or `--approve`) accepts the spec. |
+| `EXECUTING` | `STEP_DONE` | `VERIFYING` | All workflow steps have completed. |
+| `EXECUTING` | `ERROR` | `BLOCKED` | Current step run fails. |
+| `EXECUTING` | `CONTEXT_HIGH` | `CONTEXT_HANDOFF` | Context tracker signals handoff threshold reached. |
+| `VERIFYING` | `ALL_PASSED` | `COMPLETED` | Every exit condition passes. |
+| `VERIFYING` | `SOME_FAILED` | `BLOCKED` | One or more exit conditions fail. |
+| `BLOCKED` | `TOOL` | `RECOVERING` | A matching recovery tool is found. |
+| `BLOCKED` | `MAX_RETRIES` | `NEEDS_INPUT` | Retry limit exceeded or no tool available. |
+| `RECOVERING` | `RECOVERED` | `EXECUTING` | Recovery tool succeeds. |
+| `RECOVERING` | `ERROR` | `BLOCKED` | Recovery tool fails (or no tool at execution time). |
+| `NEEDS_INPUT` | `INPUT_RECEIVED` | `EXECUTING` | User provides guidance and continues. |
+| `CONTEXT_HANDOFF` | `HANDOFF_COMPLETE` | `EXECUTING` | Handoff context reset completes. |
+
+### Terminal Behavior
+
+- `COMPLETED` is terminal in the transition table (no outgoing transitions).
+- `run()` returns when state is `COMPLETED` or `NEEDS_INPUT`.
+- In `NEEDS_INPUT`, entering `abort` sets state directly to `COMPLETED` (without an FSM event).
+
 ## Session Persistence
 
 State is stored per session under `sessions/` (gitignored):

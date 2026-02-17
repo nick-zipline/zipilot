@@ -2,7 +2,7 @@
 
 import pytest
 
-from zipilot.spec import ExitCondition, Spec, Step, load_spec_str
+from zipilot.spec import ExitCondition, Preflight, PreflightDocker, Spec, Step, load_spec_str
 
 
 VALID_SPEC = """\
