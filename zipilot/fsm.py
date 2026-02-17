@@ -8,6 +8,15 @@ from pathlib import Path
 from typing import Any
 
 from zipilot.config import Config
+from zipilot.console import (
+    get_console,
+    print_error,
+    print_muted,
+    print_phase,
+    print_step,
+    print_success,
+    print_warning,
+)
 from zipilot.context import ContextTracker
 from zipilot.persistence import (
     PersistedState,
@@ -146,28 +155,27 @@ class FSMEngine:
     def _handle_spec_creation(self) -> None:
         """Show spec to user and get approval."""
         spec = self.ctx.spec
-        print(f"\n{'='*60}")
-        print(f"SPEC: {spec.goal}")
-        print(f"{'='*60}")
-        print(f"Steps ({len(spec.steps)}):")
+        console = get_console()
+        console.rule(f"[bold]SPEC: {spec.goal}[/bold]")
+        console.print(f"[bold]Steps ({len(spec.steps)}):[/bold]")
         for i, step in enumerate(spec.steps):
-            print(f"  {i+1}. [{step.id}] {step.description}")
-        print(f"Exit conditions ({len(spec.exit_conditions)}):")
+            console.print(f"  {i+1}. [muted][{step.id}][/muted] {step.description}")
+        console.print(f"[bold]Exit conditions ({len(spec.exit_conditions)}):[/bold]")
         for ec in spec.exit_conditions:
             if ec.type == "command":
-                print(f"  - command: {ec.command} (expect exit {ec.expect_exit_code})")
+                console.print(f"  - command: {ec.command} (expect exit {ec.expect_exit_code})")
             elif ec.type == "playwright":
-                print(f"  - playwright: {ec.url}")
+                console.print(f"  - playwright: {ec.url}")
                 for a in ec.assertions:
-                    print(f"      - {a}")
-        print(f"Max retries: {spec.max_retries}")
+                    console.print(f"      - {a}")
+        print_muted(f"Max retries: {spec.max_retries}")
         dirs = spec.context.working_directories
         if len(dirs) == 1:
-            print(f"Working dir: {dirs[0]}")
+            print_muted(f"Working dir: {dirs[0]}")
         else:
-            print(f"Working dirs: {', '.join(dirs)}")
-        print(f"Model: {spec.context.model}")
-        print(f"{'='*60}")
+            print_muted(f"Working dirs: {', '.join(dirs)}")
+        print_muted(f"Model: {spec.context.model}")
+        console.rule()
 
         if self.auto_approve:
             log.info("Auto-approving spec")
@@ -190,8 +198,11 @@ class FSMEngine:
         step = self.ctx.spec.steps[self.ctx.step_index]
         prompt = step.codex_prompt or step.description
 
-        print(f"\n>>> Executing step {self.ctx.step_index + 1}/{len(self.ctx.spec.steps)}: "
-              f"[{step.id}] {step.description}")
+        print_step(
+            self.ctx.step_index + 1,
+            len(self.ctx.spec.steps),
+            f"[{step.id}] {step.description}",
+        )
 
         # Check context before starting
         if self.runner.tracker.should_handoff:
@@ -223,14 +234,17 @@ class FSMEngine:
 
     def _handle_verifying(self) -> None:
         """Run all exit conditions."""
-        print("\n>>> Verifying exit conditions...")
+        print_phase("Verifying exit conditions...")
         all_passed = True
         working_dir = str(Path(self.ctx.spec.context.working_directory).expanduser())
+        console = get_console()
 
         for i, ec in enumerate(self.ctx.spec.exit_conditions):
             result = self._run_exit_condition(ec, working_dir)
-            status = "PASS" if result.success else "FAIL"
-            print(f"  [{status}] Exit condition {i+1} ({ec.type}): {result.message[:200]}")
+            if result.success:
+                console.print(f"  [success][PASS][/success] Exit condition {i+1} ({ec.type}): {result.message[:200]}")
+            else:
+                console.print(f"  [error][FAIL][/error] Exit condition {i+1} ({ec.type}): {result.message[:200]}")
             if not result.success:
                 all_passed = False
                 self.ctx.last_error = result.message
@@ -270,7 +284,7 @@ class FSMEngine:
             return
 
         working_dir = str(Path(self.ctx.spec.context.working_directory).expanduser())
-        print(f"\n>>> Recovering with tool: {tool.name}")
+        print_phase(f"Recovering with tool: {tool.name}")
 
         result = tool.run({
             "error_info": self.ctx.last_error,
@@ -290,12 +304,14 @@ class FSMEngine:
 
     def _handle_needs_input(self) -> None:
         """Prompt user for input to unblock."""
-        print(f"\n{'!'*60}")
-        print("NEEDS USER INPUT")
-        print(f"{'!'*60}")
-        print(f"Current step: {self.ctx.step_index + 1}/{len(self.ctx.spec.steps)}")
-        print(f"Last error: {self.ctx.last_error[:500]}")
-        print(f"Retry count: {self.ctx.retry_count}")
+        from rich.panel import Panel
+
+        content = (
+            f"Current step: {self.ctx.step_index + 1}/{len(self.ctx.spec.steps)}\n"
+            f"Last error: {self.ctx.last_error[:500]}\n"
+            f"Retry count: {self.ctx.retry_count}"
+        )
+        get_console().print(Panel(content, title="NEEDS USER INPUT", border_style="warning"))
 
         if self.ctx.user_input_callback:
             user_input = self.ctx.user_input_callback(
@@ -315,7 +331,7 @@ class FSMEngine:
 
     def _handle_context_handoff(self) -> None:
         """Save continuation context and start fresh session."""
-        print("\n>>> Context window high — performing handoff to new session")
+        print_phase("Context window high — performing handoff to new session")
         if self.ctx.last_session:
             self.ctx.continuation_context = (
                 f"Previous session summary (step {self.ctx.step_index}): "
@@ -326,11 +342,10 @@ class FSMEngine:
 
     def _handle_completed(self) -> None:
         """Terminal state."""
-        print(f"\n{'='*60}")
-        print("COMPLETED")
-        print(f"{'='*60}")
-        print(f"Goal: {self.ctx.spec.goal}")
-        print(f"Sessions run: {len(self.ctx.session_history)}")
+        console = get_console()
+        console.rule("[success]COMPLETED[/success]")
+        console.print(f"[bold]Goal:[/bold] {self.ctx.spec.goal}")
+        console.print(f"Sessions run: {len(self.ctx.session_history)}")
 
     # -- Helpers --
 

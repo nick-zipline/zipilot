@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import textwrap
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -23,6 +24,11 @@ from zipilot.cli import (
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _strip_ansi(text: str) -> str:
+    """Remove ANSI escape codes from text."""
+    return re.sub(r"\x1b\[[0-9;]*m", "", text)
+
 
 def _make_codex_jsonl(*messages: str) -> str:
     """Build fake ``codex exec --json`` JSONL stdout from assistant messages."""
@@ -137,8 +143,9 @@ class TestRunCodexPromptStreaming:
         assert "Exploring..." in text
         assert "Found files" in text
         captured = capsys.readouterr()
-        assert "Exploring..." in captured.out
-        assert "Found files" in captured.out
+        out = _strip_ansi(captured.out)
+        assert "Exploring" in out
+        assert "Found files" in out
 
     def test_stream_codex_not_found(self):
         with patch("zipilot.cli.subprocess.Popen", side_effect=FileNotFoundError):
@@ -336,6 +343,7 @@ class TestCmdSpec:
             "steps": 5,
             "no_explore": False,
             "no_plan_file": False,
+            "no_worktree": True,
             "verbose": False,
         }
         defaults.update(overrides)

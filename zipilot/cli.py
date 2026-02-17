@@ -13,6 +13,15 @@ from pathlib import Path
 
 import yaml
 from zipilot.config import load_config
+from zipilot.console import (
+    get_console,
+    print_error,
+    print_markdown,
+    print_muted,
+    print_phase,
+    print_success,
+    print_warning,
+)
 from zipilot.fsm import FSMEngine
 from zipilot.persistence import list_sessions, load_state
 from zipilot.spec import load_spec
@@ -268,7 +277,7 @@ def _run_codex_prompt_streaming(
         text = _parse_codex_line(line)
         if text:
             assistant_parts.append(text)
-            print(text)
+            print_markdown(text)
 
     try:
         proc.wait(timeout=timeout)
@@ -534,36 +543,51 @@ def cmd_spec(args: argparse.Namespace) -> int:
     model = args.model or config.model
     step_count = args.steps
 
+    # 3b. Set up git worktree (unless --no-worktree)
+    if not args.no_worktree:
+        from zipilot.worktree import is_git_repo, setup_worktree
+
+        primary_dir = working_directories[0]
+        if is_git_repo(primary_dir):
+            wt_path, wt_err = setup_worktree(primary_dir, goal)
+            if wt_path:
+                working_directories[0] = wt_path
+            elif wt_err:
+                print_warning(f"Worktree setup failed: {wt_err}")
+                print_warning("Continuing with original working directory.")
+        else:
+            print_warning(f"Not a git repo: {primary_dir}. Skipping worktree.")
+
     # 4. EXPLORE phase (skipped with --no-explore)
     exploration_text = ""
     if not args.no_explore:
-        print("\nExploring codebase with Codex...\n")
+        print_phase("Exploring codebase with Codex...")
         exploration_text, explore_err = _explore_codebase_with_codex(
             goal, working_directories[0], model,
         )
         if explore_err:
-            print(f"Exploration failed: {explore_err}")
-            print("Falling back to simple planning.\n")
+            print_warning(f"Exploration failed: {explore_err}")
+            print_warning("Falling back to simple planning.")
         else:
-            print("Exploration complete.\n")
+            print_success("Exploration complete.")
 
     # 5. PLAN phase
     steps: list[dict] = []
     summary = ""
 
     if exploration_text:
-        print("Generating detailed plan...\n")
+        print_phase("Generating detailed plan...")
         steps, summary, plan_err = _generate_plan_with_codex(
             goal, exploration_text, working_directories[0], model, step_count,
         )
         if plan_err:
-            print(f"Smart planning failed: {plan_err}")
-            print("Falling back to simple planning.\n")
+            print_warning(f"Smart planning failed: {plan_err}")
+            print_warning("Falling back to simple planning.")
             steps = []
 
     # Fallback to simple codex planning
     if not steps:
-        print("Generating plan with Codex...\n")
+        print_phase("Generating plan with Codex...")
         simple_steps, codex_err = _suggest_steps_with_codex(
             goal, working_directories[0], model, step_count,
         )
@@ -573,7 +597,8 @@ def cmd_spec(args: argparse.Namespace) -> int:
                 for s in simple_steps
             ]
         else:
-            print(f"Codex failed: {codex_err}\nEntering steps manually.\n")
+            print_error(f"Codex failed: {codex_err}")
+            print_warning("Entering steps manually.")
 
     # Fallback to manual entry
     if not steps:
@@ -591,18 +616,19 @@ def cmd_spec(args: argparse.Namespace) -> int:
         return 1
 
     # 6. REVIEW phase
+    console = get_console()
     if summary:
-        print(f"Summary: {summary}\n")
+        console.print(f"\n[bold]Summary:[/bold] {summary}\n")
     for i, step in enumerate(steps, 1):
-        line = f"  {i}. {step['description']}"
+        line = f"  [bold]{i}.[/bold] {step['description']}"
         if step.get("files"):
-            line += f"  [{', '.join(step['files'])}]"
-        print(line)
+            line += f"  [muted][{', '.join(step['files'])}][/muted]"
+        console.print(line)
         if step.get("codex_prompt"):
             prompt_preview = step["codex_prompt"][:80]
             if len(step["codex_prompt"]) > 80:
                 prompt_preview += "..."
-            print(f"     Codex: {prompt_preview}")
+            console.print(f"     [muted]Codex: {prompt_preview}[/muted]")
     print()
 
     choice = _prompt("Accept plan? [Y/n/r=regenerate]", "y").lower()
@@ -659,14 +685,14 @@ def cmd_spec(args: argparse.Namespace) -> int:
     output.parent.mkdir(parents=True, exist_ok=True)
     with open(output, "w") as f:
         yaml.safe_dump(raw, f, sort_keys=False)
-    print(f"\nCreated spec: {output}")
+    print_success(f"Created spec: {output}")
 
     # Write markdown plan file (unless --no-plan-file or no exploration)
     if exploration_text and not args.no_plan_file:
         plan_path = _write_plan_markdown(
             goal, summary, exploration_text, steps, [exit_condition],
         )
-        print(f"Created plan: {plan_path}")
+        print_success(f"Created plan: {plan_path}")
 
     # 8. Optional auto-run
     should_run = args.run
@@ -852,6 +878,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_spec.add_argument("--steps", type=int, default=5, help="Number of steps (default: 5)")
     p_spec.add_argument("--no-explore", action="store_true", help="Skip codebase exploration")
     p_spec.add_argument("--no-plan-file", action="store_true", help="Skip writing markdown plan file")
+    p_spec.add_argument("--no-worktree", action="store_true", help="Skip git worktree creation")
 
     return parser
 
