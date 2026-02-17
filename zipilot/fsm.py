@@ -161,7 +161,11 @@ class FSMEngine:
                 for a in ec.assertions:
                     print(f"      - {a}")
         print(f"Max retries: {spec.max_retries}")
-        print(f"Working dir: {spec.context.working_directory}")
+        dirs = spec.context.working_directories
+        if len(dirs) == 1:
+            print(f"Working dir: {dirs[0]}")
+        else:
+            print(f"Working dirs: {', '.join(dirs)}")
         print(f"Model: {spec.context.model}")
         print(f"{'='*60}")
 

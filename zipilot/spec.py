@@ -26,8 +26,13 @@ class Step:
 
 @dataclass
 class SpecContext:
-    working_directory: str = "~/github/cloud"
+    working_directories: list[str] = field(default_factory=lambda: ["~/github/cloud"])
     model: str = "gpt-5.3-codex"
+
+    @property
+    def working_directory(self) -> str:
+        """Primary working directory (first in the list)."""
+        return self.working_directories[0]
 
 
 @dataclass
@@ -65,8 +70,11 @@ def _parse_step(raw: dict) -> Step:
 def _parse_context(raw: dict | None) -> SpecContext:
     if raw is None:
         return SpecContext()
+    wd = raw.get("working_directory", ["~/github/cloud"])
+    if isinstance(wd, str):
+        wd = [wd]
     return SpecContext(
-        working_directory=raw.get("working_directory", "~/github/cloud"),
+        working_directories=wd,
         model=raw.get("model", "gpt-5.3-codex"),
     )
 

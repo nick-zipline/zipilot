@@ -45,6 +45,16 @@ def _completed_process(stdout: str, returncode: int = 0, stderr: str = ""):
     )
 
 
+def _mock_popen(stdout: str, returncode: int = 0, stderr: str = ""):
+    """Return a mock Popen that yields *stdout* lines for streaming mode."""
+    mock_proc = MagicMock()
+    mock_proc.stdout = iter(stdout.splitlines(keepends=True))
+    mock_proc.stderr.read.return_value = stderr
+    mock_proc.returncode = returncode
+    mock_proc.wait.return_value = None
+    return mock_proc
+
+
 # ---------------------------------------------------------------------------
 # _run_codex_prompt
 # ---------------------------------------------------------------------------
@@ -97,6 +107,61 @@ class TestRunCodexPrompt:
         with patch("zipilot.cli.subprocess.run", return_value=_completed_process(stdout)):
             text, err = _run_codex_prompt("test", "/tmp", "model")
         assert "no output" in err
+
+
+class TestRunCodexPromptStreaming:
+    def test_streams_agent_messages(self, capsys):
+        """Streaming mode prints each agent message and collects them."""
+        lines = [
+            json.dumps({"type": "session.start", "session_id": "s1"}) + "\n",
+            json.dumps({
+                "type": "item.completed",
+                "item": {"type": "agent_message", "text": "Exploring..."},
+            }) + "\n",
+            json.dumps({
+                "type": "item.completed",
+                "item": {"type": "agent_message", "text": "Found files"},
+            }) + "\n",
+        ]
+
+        mock_proc = MagicMock()
+        mock_proc.stdout = iter(lines)
+        mock_proc.stderr.read.return_value = ""
+        mock_proc.returncode = 0
+        mock_proc.wait.return_value = None
+
+        with patch("zipilot.cli.subprocess.Popen", return_value=mock_proc):
+            text, err = _run_codex_prompt("test", "/tmp", "model", stream=True)
+
+        assert err == ""
+        assert "Exploring..." in text
+        assert "Found files" in text
+        captured = capsys.readouterr()
+        assert "Exploring..." in captured.out
+        assert "Found files" in captured.out
+
+    def test_stream_codex_not_found(self):
+        with patch("zipilot.cli.subprocess.Popen", side_effect=FileNotFoundError):
+            text, err = _run_codex_prompt("test", "/tmp", "model", stream=True)
+        assert "not found" in err
+
+    def test_stream_timeout(self):
+        import subprocess as _subprocess
+
+        mock_proc = MagicMock()
+        mock_proc.stdout = iter([])
+        mock_proc.stderr.read.return_value = ""
+        # First call (with timeout) raises; second call (after kill) succeeds
+        mock_proc.wait.side_effect = [
+            _subprocess.TimeoutExpired("codex", 120),
+            None,
+        ]
+        mock_proc.kill.return_value = None
+
+        with patch("zipilot.cli.subprocess.Popen", return_value=mock_proc):
+            text, err = _run_codex_prompt("test", "/tmp", "model", stream=True)
+        assert "timed out" in err
+        mock_proc.kill.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -179,7 +244,7 @@ class TestGeneratePlanWithCodex:
             PROMPT: Write test for health endpoint
         """)
         stdout = _make_codex_jsonl(plan_text)
-        with patch("zipilot.cli.subprocess.run", return_value=_completed_process(stdout)):
+        with patch("zipilot.cli.subprocess.Popen", return_value=_mock_popen(stdout)):
             steps, summary, err = _generate_plan_with_codex(
                 "Add health endpoint", "project uses Flask", "/tmp", "model",
             )
@@ -189,7 +254,7 @@ class TestGeneratePlanWithCodex:
         assert steps[0]["description"] == "Create route"
 
     def test_returns_error_when_codex_fails(self):
-        with patch("zipilot.cli.subprocess.run", return_value=_completed_process("", returncode=1, stderr="fail")):
+        with patch("zipilot.cli.subprocess.Popen", return_value=_mock_popen("", returncode=1, stderr="fail")):
             steps, summary, err = _generate_plan_with_codex(
                 "goal", "context", "/tmp", "model",
             )
@@ -200,10 +265,10 @@ class TestGeneratePlanWithCodex:
         long_context = "x" * 10000
         plan_text = "STEP 1: Do it\nFILES: a.py\nPROMPT: Just do it"
         stdout = _make_codex_jsonl(plan_text)
-        with patch("zipilot.cli.subprocess.run", return_value=_completed_process(stdout)) as mock_run:
+        with patch("zipilot.cli.subprocess.Popen", return_value=_mock_popen(stdout)) as mock_popen_call:
             _generate_plan_with_codex("goal", long_context, "/tmp", "model")
             # Verify the prompt passed to codex has truncated context
-            prompt_arg = mock_run.call_args[0][0][-1]  # last arg is the prompt
+            prompt_arg = mock_popen_call.call_args[0][0][-1]  # last arg is the prompt
             assert "truncated" in prompt_arg
 
 
@@ -396,3 +461,23 @@ class TestCmdSpec:
             args = self._make_args(prompt=None)
             result = cmd_spec(args)
         assert result == 1
+
+    @patch("zipilot.cli._drain_stdin")
+    @patch("zipilot.cli._prompt")
+    @patch("zipilot.cli._run_codex_prompt")
+    def test_comma_separated_working_dirs(self, mock_codex, mock_prompt, _drain, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+
+        simple_steps = "- Step one\n- Step two"
+        mock_codex.return_value = (simple_steps, "")
+        output_path = str(tmp_path / "specs/test.yaml")
+        mock_prompt.side_effect = ["y", output_path, "3", "n"]
+
+        args = self._make_args(no_explore=True, working_directory="~/a,~/b")
+        result = cmd_spec(args)
+
+        assert result == 0
+        import yaml
+        with open(output_path) as f:
+            raw = yaml.safe_load(f)
+        assert raw["context"]["working_directory"] == ["~/a", "~/b"]

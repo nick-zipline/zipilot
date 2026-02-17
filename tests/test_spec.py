@@ -168,7 +168,48 @@ exit_conditions:
     spec = load_spec_str(yaml_str)
     assert spec.max_retries == 3  # default
     assert spec.context.working_directory == "~/github/cloud"
+    assert spec.context.working_directories == ["~/github/cloud"]
     assert spec.context.model == "gpt-5.3-codex"
+
+
+def test_working_directory_string_backward_compat():
+    """A single string working_directory in YAML is normalized to a list."""
+    yaml_str = """\
+version: 1
+goal: "compat"
+steps:
+  - id: s1
+    description: "step"
+exit_conditions:
+  - type: command
+    command: "true"
+context:
+  working_directory: ~/my/project
+"""
+    spec = load_spec_str(yaml_str)
+    assert spec.context.working_directories == ["~/my/project"]
+    assert spec.context.working_directory == "~/my/project"
+
+
+def test_working_directory_list():
+    """A list working_directory in YAML is loaded as-is."""
+    yaml_str = """\
+version: 1
+goal: "multi-dir"
+steps:
+  - id: s1
+    description: "step"
+exit_conditions:
+  - type: command
+    command: "true"
+context:
+  working_directory:
+    - ~/repo-a
+    - ~/repo-b
+"""
+    spec = load_spec_str(yaml_str)
+    assert spec.context.working_directories == ["~/repo-a", "~/repo-b"]
+    assert spec.context.working_directory == "~/repo-a"
 
 
 def test_unsupported_version():

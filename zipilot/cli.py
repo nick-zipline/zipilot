@@ -160,15 +160,37 @@ def _slugify_filename(goal: str) -> str:
     return f"specs/{slug or 'new-spec'}.yaml"
 
 
+def _parse_codex_line(line: str) -> str | None:
+    """Extract assistant message text from a single JSONL line, or ``None``."""
+    line = line.strip()
+    if not line:
+        return None
+    try:
+        obj = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+    if obj.get("type") == "item.completed":
+        item = obj.get("item", {})
+        if item.get("type") == "agent_message":
+            text = item.get("text", "")
+            if text:
+                return text
+    return None
+
+
 def _run_codex_prompt(
     prompt: str,
     working_directory: str,
     model: str,
     timeout: int = 120,
+    stream: bool = False,
 ) -> tuple[str, str]:
     """Run a prompt through ``codex exec --json`` and return assistant text.
 
     Returns (text, error). *error* is empty on success.
+
+    When *stream* is ``True``, agent messages are printed to the terminal as
+    they arrive so the user can follow progress in real-time.
     """
     log = logging.getLogger(__name__)
     cmd = [
@@ -185,6 +207,9 @@ def _run_codex_prompt(
     ]
 
     log.debug("Running: %s", " ".join(cmd))
+
+    if stream:
+        return _run_codex_prompt_streaming(cmd, timeout, log)
 
     try:
         result = subprocess.run(
@@ -208,19 +233,9 @@ def _run_codex_prompt(
 
     assistant_parts: list[str] = []
     for line in result.stdout.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            obj = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if obj.get("type") == "item.completed":
-            item = obj.get("item", {})
-            if item.get("type") == "agent_message":
-                text = item.get("text", "")
-                if text:
-                    assistant_parts.append(text)
+        text = _parse_codex_line(line)
+        if text:
+            assistant_parts.append(text)
 
     text = "\n".join(assistant_parts)
     log.debug("Extracted assistant text: %s", text[:500])
@@ -228,6 +243,56 @@ def _run_codex_prompt(
     if not text.strip():
         return "", "codex returned no output"
     return text, ""
+
+
+def _run_codex_prompt_streaming(
+    cmd: list[str],
+    timeout: int,
+    log: logging.Logger,
+) -> tuple[str, str]:
+    """Stream codex JSONL output, printing agent messages as they arrive."""
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            stdin=subprocess.DEVNULL,
+        )
+    except FileNotFoundError:
+        return "", "'codex' not found on PATH — install with: npm i -g @openai/codex"
+
+    assistant_parts: list[str] = []
+    assert proc.stdout is not None  # mypy
+    for line in proc.stdout:
+        text = _parse_codex_line(line)
+        if text:
+            assistant_parts.append(text)
+            print(text)
+
+    try:
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+        return "", f"codex timed out after {timeout}s"
+
+    assert proc.stderr is not None  # mypy
+    stderr = proc.stderr.read().strip()
+    log.debug("codex exit code: %d", proc.returncode)
+    if stderr:
+        log.debug("codex stderr: %s", stderr)
+
+    if proc.returncode != 0:
+        detail = f": {stderr}" if stderr else ""
+        return "", f"codex exited with code {proc.returncode}{detail}"
+
+    combined = "\n".join(assistant_parts)
+    log.debug("Extracted assistant text: %s", combined[:500])
+
+    if not combined.strip():
+        return "", "codex returned no output"
+    return combined, ""
 
 
 def _suggest_steps_with_codex(
@@ -243,7 +308,7 @@ def _suggest_steps_with_codex(
         f"Return exactly {step_count} one-line steps.\n"
         "Output format: each line starts with '- ' and contains only the step text."
     )
-    text, err = _run_codex_prompt(prompt, working_directory, model)
+    text, err = _run_codex_prompt(prompt, working_directory, model, stream=True)
     if err:
         return [], err
 
@@ -280,7 +345,7 @@ def _explore_codebase_with_codex(
         "4. Summarise your findings so a planner can create detailed steps.\n\n"
         "Output your findings as free-form text with clear headings."
     )
-    return _run_codex_prompt(prompt, working_directory, model, timeout=180)
+    return _run_codex_prompt(prompt, working_directory, model, timeout=180, stream=True)
 
 
 def _parse_plan_output(text: str, step_count: int) -> tuple[list[dict], str]:
@@ -357,7 +422,7 @@ def _generate_plan_with_codex(
         "Make each PROMPT detailed enough that codex can execute it autonomously. "
         "Reference specific files, functions, and patterns from the exploration."
     )
-    text, err = _run_codex_prompt(prompt, working_directory, model)
+    text, err = _run_codex_prompt(prompt, working_directory, model, stream=True)
     if err:
         return [], "", err
 
@@ -462,7 +527,10 @@ def cmd_spec(args: argparse.Namespace) -> int:
         }
 
     # 3. Resolve working_dir and model
-    working_directory = args.working_directory or config.working_directory
+    if args.working_directory:
+        working_directories = [d.strip() for d in args.working_directory.split(",") if d.strip()]
+    else:
+        working_directories = list(config.working_directories)
     model = args.model or config.model
     step_count = args.steps
 
@@ -471,7 +539,7 @@ def cmd_spec(args: argparse.Namespace) -> int:
     if not args.no_explore:
         print("\nExploring codebase with Codex...\n")
         exploration_text, explore_err = _explore_codebase_with_codex(
-            goal, working_directory, model,
+            goal, working_directories[0], model,
         )
         if explore_err:
             print(f"Exploration failed: {explore_err}")
@@ -486,7 +554,7 @@ def cmd_spec(args: argparse.Namespace) -> int:
     if exploration_text:
         print("Generating detailed plan...\n")
         steps, summary, plan_err = _generate_plan_with_codex(
-            goal, exploration_text, working_directory, model, step_count,
+            goal, exploration_text, working_directories[0], model, step_count,
         )
         if plan_err:
             print(f"Smart planning failed: {plan_err}")
@@ -497,7 +565,7 @@ def cmd_spec(args: argparse.Namespace) -> int:
     if not steps:
         print("Generating plan with Codex...\n")
         simple_steps, codex_err = _suggest_steps_with_codex(
-            goal, working_directory, model, step_count,
+            goal, working_directories[0], model, step_count,
         )
         if simple_steps:
             steps = [
@@ -542,13 +610,13 @@ def cmd_spec(args: argparse.Namespace) -> int:
         # Re-run planning without exploration (already have context)
         if exploration_text:
             steps, summary, plan_err = _generate_plan_with_codex(
-                goal, exploration_text, working_directory, model, step_count,
+                goal, exploration_text, working_directories[0], model, step_count,
             )
             if plan_err or not steps:
                 print("Regeneration failed. Keeping original plan.")
         else:
             simple_steps, _ = _suggest_steps_with_codex(
-                goal, working_directory, model, step_count,
+                goal, working_directories[0], model, step_count,
             )
             if simple_steps:
                 steps = [
@@ -580,7 +648,7 @@ def cmd_spec(args: argparse.Namespace) -> int:
         "version": 1,
         "goal": goal,
         "context": {
-            "working_directory": working_directory,
+            "working_directory": working_directories,
             "model": model,
         },
         "steps": spec_steps,
@@ -650,7 +718,10 @@ def cmd_create_spec(args: argparse.Namespace) -> int:
         }
 
     # 3. Resolve working_dir and model from config (or flag overrides)
-    working_directory = args.working_directory or config.working_directory
+    if args.working_directory:
+        working_directories = [d.strip() for d in args.working_directory.split(",") if d.strip()]
+    else:
+        working_directories = list(config.working_directories)
     model = args.model or config.model
 
     # 4. Always draft steps with Codex
@@ -658,7 +729,7 @@ def cmd_create_spec(args: argparse.Namespace) -> int:
     steps: list[dict] = []
     drafted, codex_err = _suggest_steps_with_codex(
         goal=goal,
-        working_directory=working_directory,
+        working_directory=working_directories[0],
         model=model,
     )
 
@@ -705,7 +776,7 @@ def cmd_create_spec(args: argparse.Namespace) -> int:
         "version": 1,
         "goal": goal,
         "context": {
-            "working_directory": working_directory,
+            "working_directory": working_directories,
             "model": model,
         },
         "steps": steps,
