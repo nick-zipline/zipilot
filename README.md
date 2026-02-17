@@ -1,6 +1,6 @@
 # zipilot
 
-`zipilot` is an autonomous control plane for running spec-driven Codex CLI workflows with a finite-state machine.
+`zipilot` is an autonomous control plane for running spec-driven Codex CLI workflows.
 
 ## Quickstart
 
