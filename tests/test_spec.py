@@ -224,3 +224,101 @@ exit_conditions:
   - type: command
     command: "echo"
 """)
+
+
+# -- Preflight tests --
+
+
+def test_spec_without_preflight_has_defaults():
+    spec = load_spec_str(VALID_SPEC)
+    assert spec.preflight.docker.enabled is True
+    assert spec.preflight.docker.socket_paths == []
+    assert spec.preflight.docker.health_check is None
+    assert spec.preflight.docker.recovery_command is None
+    assert spec.preflight.commands == []
+
+
+def test_preflight_docker_disabled():
+    yaml_str = """\
+version: 1
+goal: "test"
+steps:
+  - id: s1
+    description: "step"
+exit_conditions:
+  - type: command
+    command: "true"
+preflight:
+  docker:
+    enabled: false
+"""
+    spec = load_spec_str(yaml_str)
+    assert spec.preflight.docker.enabled is False
+
+
+def test_preflight_custom_socket_paths():
+    yaml_str = """\
+version: 1
+goal: "test"
+steps:
+  - id: s1
+    description: "step"
+exit_conditions:
+  - type: command
+    command: "true"
+preflight:
+  docker:
+    socket_paths:
+      - unix:///var/run/docker.sock
+      - unix://$HOME/.docker/run/docker.sock
+"""
+    spec = load_spec_str(yaml_str)
+    assert len(spec.preflight.docker.socket_paths) == 2
+    assert spec.preflight.docker.socket_paths[0] == "unix:///var/run/docker.sock"
+
+
+def test_preflight_commands_parsed():
+    yaml_str = """\
+version: 1
+goal: "test"
+steps:
+  - id: s1
+    description: "step"
+exit_conditions:
+  - type: command
+    command: "true"
+preflight:
+  commands:
+    - command: "bin/check"
+      working_directory: ~/github/cloud
+      timeout: 60
+      fail_on_error: false
+    - command: "echo ok"
+"""
+    spec = load_spec_str(yaml_str)
+    assert len(spec.preflight.commands) == 2
+    cmd = spec.preflight.commands[0]
+    assert cmd.command == "bin/check"
+    assert cmd.working_directory == "~/github/cloud"
+    assert cmd.timeout == 60
+    assert cmd.fail_on_error is False
+    # Second command uses defaults
+    cmd2 = spec.preflight.commands[1]
+    assert cmd2.timeout == 30
+    assert cmd2.fail_on_error is False
+    assert cmd2.working_directory is None
+
+
+def test_preflight_invalid_type():
+    with pytest.raises(ValueError, match="'preflight' must be a mapping"):
+        load_spec_str("""\
+version: 1
+goal: "test"
+steps:
+  - id: s1
+    description: "step"
+exit_conditions:
+  - type: command
+    command: "true"
+preflight: "string"
+""")

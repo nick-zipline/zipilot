@@ -31,7 +31,7 @@ uv run zipilot resume [--config config.yaml]
 uv run zipilot status [--config config.yaml]
 uv run zipilot validate <spec.yaml>
 uv run zipilot tools
-uv run zipilot create-spec [output.yaml] [--with-codex]
+uv run zipilot spec [output.yaml] [--with-codex]
 ```
 
 ## Repo Structure

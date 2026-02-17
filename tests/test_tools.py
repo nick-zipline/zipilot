@@ -277,3 +277,110 @@ class TestDockerTool:
         })
         assert result.success is True
         assert "container list" in result.message
+
+    @patch("zipilot.tools.docker_tool.os.stat")
+    @patch("zipilot.tools.docker_tool.os.path.exists")
+    def test_find_docker_env_finds_socket(self, mock_exists, mock_stat):
+        """_find_docker_env returns env dict when a valid socket is found."""
+        mock_stat_result = MagicMock()
+        mock_stat_result.st_mode = 0o140755  # S_ISSOCK
+        mock_stat.return_value = mock_stat_result
+        tool = DockerTool()
+        result = tool._find_docker_env(["/var/run/docker.sock"])
+        assert result is not None
+        assert result["DOCKER_HOST"] == "unix:///var/run/docker.sock"
+
+    @patch("zipilot.tools.docker_tool.os.stat")
+    def test_find_docker_env_no_socket(self, mock_stat):
+        """_find_docker_env returns None when no socket exists."""
+        mock_stat.side_effect = FileNotFoundError
+        tool = DockerTool()
+        result = tool._find_docker_env(["/nonexistent/docker.sock"])
+        assert result is None
+
+    @patch("zipilot.tools.docker_tool.os.stat")
+    def test_find_docker_env_custom_paths_priority(self, mock_stat):
+        """Custom paths are checked before defaults."""
+        call_order = []
+
+        def stat_side_effect(path):
+            call_order.append(path)
+            if path == "/custom/docker.sock":
+                result = MagicMock()
+                result.st_mode = 0o140755  # S_ISSOCK
+                return result
+            raise FileNotFoundError
+
+        mock_stat.side_effect = stat_side_effect
+        tool = DockerTool()
+        result = tool._find_docker_env(["/custom/docker.sock"])
+        assert result is not None
+        assert result["DOCKER_HOST"] == "unix:///custom/docker.sock"
+        # Custom path should be checked first
+        assert call_order[0] == "/custom/docker.sock"
+
+    @patch("zipilot.tools.docker_tool.os.stat")
+    def test_preflight_no_socket_skips(self, mock_stat):
+        """When no socket is found, preflight returns success with skip message."""
+        mock_stat.side_effect = FileNotFoundError
+        tool = DockerTool()
+        result = tool.run({"preflight": True, "working_directory": "/tmp"})
+        assert result.success is True
+        assert "skip" in result.message.lower()
+
+    @patch("zipilot.tools.docker_tool.subprocess.run")
+    @patch.object(DockerTool, "_find_docker_env")
+    def test_preflight_custom_health_check(self, mock_find_env, mock_run):
+        """Custom health_check command runs instead of docker ps."""
+        mock_find_env.return_value = {"DOCKER_HOST": "unix:///var/run/docker.sock"}
+        mock_run.return_value = MagicMock(returncode=0, stdout="ok\n", stderr="")
+        tool = DockerTool()
+        result = tool.run({
+            "preflight": True,
+            "working_directory": "/tmp",
+            "health_check": "docker compose ps",
+        })
+        assert result.success is True
+        assert "passed" in result.message.lower()
+        # Verify the custom command was used (shell=True)
+        mock_run.assert_called_once()
+        call_args = mock_run.call_args
+        assert call_args[0][0] == "docker compose ps"
+        assert call_args[1]["shell"] is True
+
+    @patch("zipilot.tools.docker_tool.subprocess.run")
+    @patch.object(DockerTool, "_find_docker_env")
+    def test_preflight_custom_recovery_command(self, mock_find_env, mock_run):
+        """Custom recovery_command runs when health check fails."""
+        mock_find_env.return_value = {"DOCKER_HOST": "unix:///var/run/docker.sock"}
+        mock_run.side_effect = [
+            # Health check fails
+            MagicMock(returncode=1, stdout="", stderr="unhealthy"),
+            # Recovery command succeeds
+            MagicMock(returncode=0, stdout="recovered\n", stderr=""),
+        ]
+        tool = DockerTool()
+        result = tool.run({
+            "preflight": True,
+            "working_directory": "/tmp",
+            "health_check": "docker compose ps",
+            "recovery_command": "docker compose up -d",
+        })
+        assert result.success is True
+        assert "recovery" in result.message.lower()
+
+    @patch("zipilot.tools.docker_tool.subprocess.run")
+    @patch.object(DockerTool, "_find_docker_env")
+    def test_docker_env_passed_to_subprocess(self, mock_find_env, mock_run):
+        """Resolved env dict is forwarded to subprocess calls."""
+        mock_find_env.return_value = {"DOCKER_HOST": "unix:///custom/docker.sock"}
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="web\tUp 2 hours (healthy)\n",
+            stderr="",
+        )
+        tool = DockerTool()
+        tool.run({"preflight": True, "working_directory": "/tmp"})
+        call_kwargs = mock_run.call_args[1]
+        assert "env" in call_kwargs
+        assert call_kwargs["env"]["DOCKER_HOST"] == "unix:///custom/docker.sock"
