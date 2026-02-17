@@ -113,7 +113,13 @@ class PlaywrightQATool(Tool):
                 obj = json.loads(line)
                 content = ""
                 if isinstance(obj, dict):
-                    if obj.get("type") == "message" and obj.get("role") == "assistant":
+                    # Format 1 (current): item.completed
+                    if obj.get("type") == "item.completed":
+                        item = obj.get("item", {})
+                        if item.get("type") == "agent_message":
+                            content = item.get("text", "")
+                    # Format 2 (legacy): message
+                    elif obj.get("type") == "message" and obj.get("role") == "assistant":
                         content = obj.get("content", "")
                         if isinstance(content, list):
                             content = " ".join(

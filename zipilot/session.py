@@ -113,8 +113,15 @@ class CodexRunner:
                 record.raw_jsonl.append(obj)
                 if obj.get("session_id"):
                     record.session_id = obj["session_id"]
-                # Capture assistant message content
-                if obj.get("type") == "message" and obj.get("role") == "assistant":
+                # Format 1 (current): item.completed
+                if obj.get("type") == "item.completed":
+                    item = obj.get("item", {})
+                    if item.get("type") == "agent_message":
+                        text = item.get("text", "")
+                        if text:
+                            record.output_lines.append(text)
+                # Format 2 (legacy): message
+                elif obj.get("type") == "message" and obj.get("role") == "assistant":
                     content = obj.get("content", "")
                     if isinstance(content, str):
                         record.output_lines.append(content)
