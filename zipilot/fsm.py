@@ -239,6 +239,20 @@ class FSMEngine:
         working_dir = str(Path(self.ctx.spec.context.working_directory).expanduser())
         console = get_console()
 
+        # Pre-flight: check docker container health
+        docker_tool = self.ctx.registry.get("docker")
+        if docker_tool is not None:
+            preflight = docker_tool.run({
+                "preflight": True,
+                "working_directory": working_dir,
+            })
+            if preflight.data and preflight.data.get("restarted"):
+                log.info("Pre-flight: restarted containers: %s", preflight.data["restarted"])
+                console.print(
+                    f"  [warning]Pre-flight:[/warning] Restarted "
+                    f"{len(preflight.data['restarted'])} container(s)"
+                )
+
         for i, ec in enumerate(self.ctx.spec.exit_conditions):
             result = self._run_exit_condition(ec, working_dir)
             if result.success:

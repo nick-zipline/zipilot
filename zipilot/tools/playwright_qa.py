@@ -29,7 +29,7 @@ class PlaywrightQATool(Tool):
         return "Run visual QA via Codex + Playwright MCP to verify a URL meets assertions"
 
     def can_handle(self, error_info: str) -> bool:
-        keywords = ["ui", "page", "render", "visual", "browser", "playwright", "frontend"]
+        keywords = ["ui", "render", "visual", "browser", "playwright", "frontend"]
         return any(kw in error_info.lower() for kw in keywords)
 
     def run(self, context: dict[str, Any]) -> ToolOutput:

@@ -74,6 +74,7 @@ class ToolRegistry:
 
 def create_default_registry() -> ToolRegistry:
     """Create a registry pre-loaded with all built-in tools."""
+    from zipilot.tools.docker_tool import DockerTool
     from zipilot.tools.grep_codebase import GrepCodebaseTool
     from zipilot.tools.playwright_qa import PlaywrightQATool
     from zipilot.tools.run_command import RunCommandTool
@@ -83,5 +84,6 @@ def create_default_registry() -> ToolRegistry:
     registry.register(RunCommandTool())
     registry.register(WaitForCITool())
     registry.register(GrepCodebaseTool())
+    registry.register(DockerTool())
     registry.register(PlaywrightQATool())
     return registry

@@ -10,6 +10,7 @@ from zipilot.tools.run_command import RunCommandTool
 from zipilot.tools.grep_codebase import GrepCodebaseTool
 from zipilot.tools.wait_for_ci import WaitForCITool
 from zipilot.tools.playwright_qa import PlaywrightQATool
+from zipilot.tools.docker_tool import DockerTool
 
 
 class TestToolRegistry:
@@ -29,7 +30,7 @@ class TestToolRegistry:
         registry = create_default_registry()
         tools = registry.list_tools()
         names = {t.name for t in tools}
-        assert names == {"run_command", "wait_for_ci", "grep_codebase", "playwright_qa"}
+        assert names == {"run_command", "wait_for_ci", "grep_codebase", "playwright_qa", "docker"}
 
     def test_find_recovery_tool_test_error(self):
         registry = create_default_registry()
@@ -45,9 +46,15 @@ class TestToolRegistry:
 
     def test_find_recovery_tool_ui_error(self):
         registry = create_default_registry()
-        tool = registry.find_recovery_tool("page render failed in browser")
+        tool = registry.find_recovery_tool("render failed in browser")
         assert tool is not None
         assert tool.name == "playwright_qa"
+
+    def test_find_recovery_tool_docker_error(self):
+        registry = create_default_registry()
+        tool = registry.find_recovery_tool("container unhealthy, connection refused")
+        assert tool is not None
+        assert tool.name == "docker"
 
     def test_find_recovery_tool_ci_error(self):
         registry = create_default_registry()
@@ -136,9 +143,11 @@ class TestPlaywrightQATool:
 
     def test_can_handle(self):
         tool = PlaywrightQATool()
-        assert tool.can_handle("page render error") is True
+        assert tool.can_handle("render error in browser") is True
         assert tool.can_handle("ui broken") is True
         assert tool.can_handle("database timeout") is False
+        # "page" alone should NOT match (too broad)
+        assert tool.can_handle("The page showed an error state") is False
 
     def test_extract_result_valid(self):
         tool = PlaywrightQATool()
@@ -191,3 +200,80 @@ class TestWaitForCITool:
             "max_wait": 2,
         })
         assert result.success is False
+
+
+class TestDockerTool:
+    def test_can_handle(self):
+        tool = DockerTool()
+        assert tool.can_handle("container unhealthy") is True
+        assert tool.can_handle("docker restart needed") is True
+        assert tool.can_handle("connection refused on port 5432") is True
+        assert tool.can_handle("503 service unavailable") is True
+        assert tool.can_handle("random stuff") is False
+
+    @patch("zipilot.tools.docker_tool.subprocess.run")
+    def test_preflight_all_healthy(self, mock_run):
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="web\tUp 2 hours (healthy)\ndb\tUp 2 hours (healthy)\n",
+            stderr="",
+        )
+        tool = DockerTool()
+        result = tool.run({"preflight": True, "working_directory": "/tmp"})
+        assert result.success is True
+        assert "healthy" in result.message.lower()
+
+    @patch("zipilot.tools.docker_tool.subprocess.run")
+    def test_preflight_restarts_unhealthy(self, mock_run):
+        mock_run.side_effect = [
+            MagicMock(
+                returncode=0,
+                stdout="web\tUp 2 hours (healthy)\ndb\tUp 2 hours (unhealthy)\n",
+                stderr="",
+            ),
+            MagicMock(returncode=0, stdout="db\n", stderr=""),
+        ]
+        tool = DockerTool()
+        result = tool.run({"preflight": True, "working_directory": "/tmp"})
+        assert result.success is True
+        assert result.data is not None
+        assert "db" in result.data["restarted"]
+
+    @patch("zipilot.tools.docker_tool.subprocess.run")
+    def test_preflight_restarts_exited(self, mock_run):
+        mock_run.side_effect = [
+            MagicMock(
+                returncode=0,
+                stdout="web\tUp 2 hours (healthy)\ndb\tExited (1) 5 minutes ago\n",
+                stderr="",
+            ),
+            MagicMock(returncode=0, stdout="db\n", stderr=""),
+        ]
+        tool = DockerTool()
+        result = tool.run({"preflight": True, "working_directory": "/tmp"})
+        assert result.success is True
+        assert result.data is not None
+        assert "db" in result.data["restarted"]
+
+    @patch("zipilot.tools.docker_tool.subprocess.run")
+    def test_docker_not_found(self, mock_run):
+        mock_run.side_effect = FileNotFoundError("docker not found")
+        tool = DockerTool()
+        result = tool.run({"preflight": True, "working_directory": "/tmp"})
+        assert result.success is True
+        assert "not found" in result.message.lower()
+
+    @patch("zipilot.tools.docker_tool.subprocess.run")
+    def test_direct_command(self, mock_run):
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="container list\n",
+            stderr="",
+        )
+        tool = DockerTool()
+        result = tool.run({
+            "command": "docker ps",
+            "working_directory": "/tmp",
+        })
+        assert result.success is True
+        assert "container list" in result.message
